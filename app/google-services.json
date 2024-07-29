@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "348924215635",
-    "project_id": "curated-7ac4b",
-    "storage_bucket": "curated-7ac4b.appspot.com"
+    "project_number": "634061266427",
+    "project_id": "curated-23c42",
+    "storage_bucket": "curated-23c42.appspot.com"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:348924215635:android:c9d976de88b8a6426fa1a6",
+        "mobilesdk_app_id": "1:634061266427:android:da3f84aa0c4afd85ce3f5e",
         "android_client_info": {
           "package_name": "com.example.projectservedraft2"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyBDndtY_pFyJOkFphCV8MfY7QAFAm0rf-Y"
+          "current_key": "AIzaSyAkZcZ3LkkcwUowubPJOq9OahVT85pmNlM"
         }
       ],
       "services": {

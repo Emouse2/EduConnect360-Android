@@ -3,14 +3,12 @@ package com.example.projectservedraft2
 import android.annotation.SuppressLint
 import android.content.ContentValues.TAG
 import android.content.Context
-import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -57,13 +55,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults.buttonColors
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
@@ -80,11 +78,16 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -92,6 +95,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -101,6 +105,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -109,6 +114,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -127,6 +136,8 @@ import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalTime
@@ -151,19 +162,31 @@ class MainActivity : AppCompatActivity() {
                         color = Color.Black
                     )
                 }
-                var SSTudent by remember { mutableStateOf(true) }
+                var SSTudent by remember { mutableStateOf(false) }
                 var unconfirmedEmail by remember {mutableStateOf("")}
                 var nameOfPersonUsingApp by remember { mutableStateOf("") }
                 var idOfPersonUsingApp by remember { mutableStateOf("") }
                 val navController = rememberNavController()
                 var emailVerified by remember {mutableStateOf(false)}
-                if (SSTudent) {
+                if (SSTudent == true) {
                     emailVerified = true
                 }
 
+                val context = LocalContext.current
+                val savedAppThemeStringFlow = readString(context, "savedAppTheme").collectAsState(initial = "")
+                val savedAppTheme by savedAppThemeStringFlow
+                if (savedAppTheme == "" || savedAppTheme == "System default") {
+                    isDarkTheme = isSystemInDarkThemeBoolean
+                } else { if(savedAppTheme == "Light") {
+                    isDarkTheme = false
+                } else{
+                    isDarkTheme = true
+                }}
+                var startDestination by remember{mutableStateOf("StartPage")}
+
                 NavHost(
                     navController = navController,
-                    startDestination = "BottomNavBar",
+                    startDestination = startDestination,
                     modifier = Modifier.fillMaxSize()
                 ) {
                     composable(
@@ -173,7 +196,10 @@ class MainActivity : AppCompatActivity() {
                     ) {
                         StartPageView(
                             navController,
-                            updatedSSTudent = { newState -> SSTudent = newState }
+                            context,
+                            updatedSSTudent = { newState -> SSTudent = newState },
+                            updatedNameOfPersonUsingApp = { newState -> nameOfPersonUsingApp = newState },
+                            updatedIdOfPersonUsingApp = { newState -> idOfPersonUsingApp = newState }
                         )
                     }
                     composable(
@@ -185,6 +211,7 @@ class MainActivity : AppCompatActivity() {
                     ) {
                         SignInStudentPageView(
                             navController,
+                            context,
                             updatedNameOfPersonUsingApp = { newState ->
                                 nameOfPersonUsingApp = newState
                             },
@@ -215,6 +242,7 @@ class MainActivity : AppCompatActivity() {
                     ) {
                         SignInStaffPageView(
                             navController,
+                            context,
                             updatedNameOfPersonUsingApp = { newState ->
                                 nameOfPersonUsingApp = newState
                             },
@@ -259,10 +287,11 @@ class MainActivity : AppCompatActivity() {
                             nameOfPersonUsingApp,
                             idOfPersonUsingApp,
                             promptManager,
+                            context,
+                            savedAppTheme,
                             updatedIsDarkTheme = { newState -> isDarkTheme = newState },
-                            updatedNameOfPersonUsingApp = { newState ->
-                                nameOfPersonUsingApp = newState
-                            }
+                            updatedNameOfPersonUsingApp = { newState -> nameOfPersonUsingApp = newState },
+                            updatedSSTudent = {newState -> SSTudent = newState}
                         )
                     }
                     composable(
@@ -281,7 +310,7 @@ class MainActivity : AppCompatActivity() {
                         popEnterTransition = { fadeIn(tween(500)) },
                         popExitTransition = { slideOutHorizontally(targetOffsetX = { fullWidth -> fullWidth }, animationSpec = tween(500)) + fadeOut(animationSpec = tween(500)) }
                     ) {
-                        CreateNewGroupPageView()
+                        CreateNewGroupPageView(navController)
                     }
                     composable(
                         route = "preview/{imageUri}",
@@ -310,7 +339,79 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-data class StoredData(val StoredData:String)
+
+val Context.dataStore by preferencesDataStore(name = "settings")
+
+object AppStoredData {
+    val SAVED_APP_THEME = stringPreferencesKey("savedAppTheme")
+    val LOGGED_IN = booleanPreferencesKey("loggedIn")
+    val SSTUDENT = booleanPreferencesKey("SSTudent")
+    val EMAIL = stringPreferencesKey("email")
+    val PASSWORD = stringPreferencesKey("password")
+}
+
+suspend fun storeString(context: Context, value: String, name: String) {
+    if (name == "savedAppTheme") {
+        context.dataStore.edit { preferences ->
+            preferences[AppStoredData.SAVED_APP_THEME] = value
+        }
+    } else { if (name == "email"){
+        context.dataStore.edit { preferences ->
+            preferences[AppStoredData.EMAIL] = value
+        }
+    } else {
+        context.dataStore.edit { preferences ->
+            preferences[AppStoredData.PASSWORD] = value
+        }
+    }}
+}
+
+suspend fun storeBoolean(context: Context, value: Boolean, name: String) {
+    if (name == "loggedIn") {
+        context.dataStore.edit { preferences ->
+            preferences[AppStoredData.LOGGED_IN] = value
+        }
+    } else {
+        context.dataStore.edit { preferences ->
+            preferences[AppStoredData.SSTUDENT] = value
+        }
+    }
+}
+
+fun readString(context: Context, name: String): Flow<String> {
+    if (name == "savedAppTheme") {
+        return context.dataStore.data
+            .map { preferences ->
+                preferences[AppStoredData.SAVED_APP_THEME] ?: ""
+            }
+    } else {
+        return if(name == "email") {
+            context.dataStore.data
+                .map { preferences ->
+                    preferences[AppStoredData.EMAIL] ?: ""
+                }
+        } else {
+            context.dataStore.data
+                .map { preferences ->
+                    preferences[AppStoredData.PASSWORD] ?: ""
+                }
+        }
+    }
+}
+
+fun readBoolean(context: Context, name: String): Flow<Boolean> {
+    return if (name == "loggedIn"){
+        context.dataStore.data
+            .map { preferences ->
+                preferences[AppStoredData.LOGGED_IN] ?: false
+            }
+    } else {
+        context.dataStore.data
+            .map { preferences ->
+                preferences[AppStoredData.SSTUDENT] ?: false
+            }
+    }
+}
 
 fun getUsernameAndIdByEmail(
     email: String,
@@ -367,6 +468,7 @@ fun signUp(
     email: String,
     password: String,
     name: String,
+    SSTudent: Boolean,
     updatedEmailVerified: (Boolean) -> Unit,
     onResult: (AuthResult?, Exception?) -> Unit
 ) {
@@ -384,7 +486,7 @@ fun signUp(
                                 CoroutineScope(Dispatchers.IO).launch {
                                     var isVerified = false
                                     while (!isVerified) {
-                                        delay(5000) // Check every 5 seconds
+                                        delay(1000)
                                         user.reload().addOnCompleteListener { reloadTask ->
                                             if (reloadTask.isSuccessful) {
                                                 isVerified = user.isEmailVerified
@@ -407,7 +509,8 @@ fun signUp(
                         "fullname" to name,
                         "email" to email,
                         "id" to it.uid,
-                        "password" to password
+                        "password" to password,
+                        "SSTudent" to SSTudent
                     )
 
                     db.collection("users").document(it.uid)
@@ -429,12 +532,6 @@ fun Color.lighter(factor: Float): Color {
     return lerp(this, Color.White, factor)
 }
 
-fun Context.findActivity(): ComponentActivity? = when (this) {
-    is ComponentActivity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
-}
-
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
@@ -445,9 +542,35 @@ fun BottomNavBar(
     nameOfPersonUsingApp: String,
     idOfPersonUsingApp: String,
     promptManager: BiometricPromptManager,
+    context: Context,
+    savedAppTheme: String,
     updatedIsDarkTheme: (Boolean) -> Unit,
-    updatedNameOfPersonUsingApp: (String) -> Unit
+    updatedNameOfPersonUsingApp: (String) -> Unit,
+    updatedSSTudent: (Boolean) -> Unit
 ) {
+    val scope = rememberCoroutineScope()
+    val db = Firebase.firestore
+    val usersCollection = db.collection("users")
+    LaunchedEffect(idOfPersonUsingApp) {
+        if (!idOfPersonUsingApp.isNullOrEmpty()) {
+            usersCollection.document(idOfPersonUsingApp).get()
+                .addOnSuccessListener { document ->
+                    if (document != null && document.exists()) {
+                        updatedSSTudent(document.getBoolean("SSTudent") ?: true)
+                        scope.launch {
+                            storeBoolean(context, SSTudent, "SSTudent")
+                        }
+                    } else {
+                        updatedSSTudent(true)
+                    }
+                }
+                .addOnFailureListener { exception ->
+                    updatedSSTudent(true)
+                }
+        } else {
+            updatedSSTudent(true)
+        }
+    }
     val navBackStackEntry by navHostController.currentBackStackEntryAsState()
     val nestedNavController = rememberNavController()
     val nestedNavBackStackEntry by nestedNavController.currentBackStackEntryAsState()
@@ -591,7 +714,7 @@ fun BottomNavBar(
                             }
                         )}
                     )
-                    if (!SSTudent) {
+                    if (!SSTudent!!) {
                         NavigationBarItem(
                             selected = isSelected4,
                             onClick = {
@@ -637,7 +760,7 @@ fun BottomNavBar(
                 }
         },
         floatingActionButton = {
-            if (!SSTudent && nestedNavBackStackEntry?.destination?.route == "GroupPage") {
+            if (!SSTudent!! && nestedNavBackStackEntry?.destination?.route == "GroupPage") {
                 FloatingActionButton(
                     onClick = { navHostController.navigate("CreateNewGroupPage") }
                 ) {
@@ -650,8 +773,7 @@ fun BottomNavBar(
         }
     ) { innerPadding ->
         Column(
-            modifier = Modifier.padding(innerPadding),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            modifier = Modifier.padding(innerPadding)
         ) {
 
         }
@@ -682,7 +804,7 @@ fun BottomNavBar(
                  popEnterTransition = noEnterTransition,
                  popExitTransition = noExitTransition
             ) {
-                GalleryPageView()
+                GalleryPageView(idOfPersonUsingApp, nestedNavController)
             }
             composable(
                 route = "SettingsPage",
@@ -697,6 +819,8 @@ fun BottomNavBar(
                     nameOfPersonUsingApp,
                     idOfPersonUsingApp,
                     promptManager,
+                    context,
+                    savedAppTheme,
                     updatedIsDarkTheme2 = {newState -> updatedIsDarkTheme(newState)},
                     updatedNameOfPersonUsingApp2 = { newState -> updatedNameOfPersonUsingApp(newState)}
                 )
@@ -756,6 +880,7 @@ fun AlertDialog1(
         }
     )
 }
+
 
 @RequiresApi(Build.VERSION_CODES.O)
 fun getGreetingMessage(currentTime: LocalTime): String {
@@ -836,49 +961,149 @@ fun GroupPageView(navHostController: NavHostController, nameOfPersonUsingApp: St
 
 
 @Composable
-fun GalleryPageView() {
-    var galleryPhotosList by remember{ mutableStateOf(List(20) { "Item $it" }) }
-    Column(modifier = Modifier.padding(10.dp)) {
-        Spacer(modifier = Modifier.height(30.dp))
-        Row{
-            Text(
-                text = "Gallery",
-                fontWeight = FontWeight.Bold,
-                fontSize = 40.sp,
-                modifier = Modifier.offset(y = (-10).dp),
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Spacer(modifier = Modifier.weight(1.0f))
-            IconButton(onClick = { /*TODO*/ }) {
-                Icon(
-                    imageVector = Icons.Filled.Add,
-                    contentDescription = "",
-                    modifier = Modifier.size(50.dp)
-                )
-            }
-        }
-        Column{
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                contentPadding = PaddingValues(10.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp),
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                modifier = Modifier.height(585.dp)
-            ) {
-                items(galleryPhotosList) { galleryPhoto ->
-                    Column(
-                        modifier = Modifier
-                            .size(120.dp)
-                            .background(MaterialTheme.colorScheme.primary)
-                            .verticalScroll(rememberScrollState())
-                        ,
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Spacer(modifier = Modifier.weight(1.0f))
-                        Text(text = galleryPhoto, color = Color.White)
-                        Spacer(modifier = Modifier.weight(1.0f))
+fun GalleryPageView(idOfPersonUsingApp: String, nestedNavController: NavHostController) {
+    var galleryPhotosList by remember { mutableStateOf(listOf<String>()) }
+    var imageUri by remember { mutableStateOf<Uri?>(null) }
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+        onResult = { uri: Uri? -> imageUri = uri }
+    )
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember{ SnackbarHostState() }
+    var canUploadImages by remember{mutableStateOf(false)}
+    val db = Firebase.firestore
+    val usersCollection = db.collection("users")
+    LaunchedEffect(idOfPersonUsingApp) {
+        if (!idOfPersonUsingApp.isNullOrEmpty()) {
+            usersCollection.document(idOfPersonUsingApp).get()
+                .addOnSuccessListener { document ->
+                    if (document != null && document.exists()) {
+                        canUploadImages = document.getBoolean("canUploadImages") == true
+                    } else {
+                        canUploadImages = false
                     }
                 }
+                .addOnFailureListener { exception ->
+                    canUploadImages = false
+                }
+        } else {
+            canUploadImages = false
+        }
+    }
+    val galleryImagesCollection = db.collection("galleryImages")
+    galleryImagesCollection.get()
+        .addOnSuccessListener { querySnapshot ->
+            val urls = querySnapshot.documents.mapNotNull { document ->
+                document.getString("url")
+            }
+            galleryPhotosList = urls
+            Log.d("success", "${urls.size} documents found")
+        }
+        .addOnFailureListener { error ->
+            Log.e("failure", "$error")
+        }
+    val storageRef = FirebaseStorage.getInstance().reference
+    val imageRef = storageRef.child("galleryImages/${UUID.randomUUID()}.jpg")
+    var downloadUrl by remember { mutableStateOf<String?>(null) }
+    var isUploading by remember { mutableStateOf(false) }
+    Scaffold(
+        snackbarHost = {
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.padding(bottom = 80.dp)
+            )
+        }
+    ){ innerPadding ->
+        Column(modifier = Modifier.padding(innerPadding)){
+            Column(modifier = Modifier.padding(10.dp)) {
+                Spacer(modifier = Modifier.height(30.dp))
+                Row{
+                    Text(
+                        text = "Gallery",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 40.sp,
+                        modifier = Modifier.offset(y = (-10).dp),
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Spacer(modifier = Modifier.weight(1.0f))
+                    IconButton(
+                        onClick = { nestedNavController.navigate("GalleryPage") }
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.arrow_clockwise),
+                            contentDescription = "",
+                            modifier = Modifier.size(50.dp)
+                        )
+                    }
+                    IconButton(onClick = {
+                        if (canUploadImages){
+                            launcher.launch("image/*")
+                        } else {
+                            scope.launch {
+                                val result = snackbarHostState
+                                    .showSnackbar(
+                                        message = "You don't have permission to upload images"
+                                    )
+                                when (result) {
+                                    SnackbarResult.ActionPerformed -> { }
+                                    SnackbarResult.Dismissed -> { }
+                                }
+                            }
+                        }
+                    }) {
+                        Icon(
+                            imageVector = Icons.Filled.Add,
+                            contentDescription = "",
+                            modifier = Modifier.size(50.dp)
+                        )
+                    }
+                }
+                Column{
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        contentPadding = PaddingValues(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        modifier = Modifier.height(585.dp)
+                    ) {
+                        items(galleryPhotosList) { galleryPhoto ->
+                            Image(
+                                painter = rememberAsyncImagePainter(galleryPhoto),
+                                contentDescription = "",
+                                modifier = Modifier.aspectRatio(1f),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+    LaunchedEffect(imageUri) {
+        imageUri?.let {
+            if (!isUploading) {
+                isUploading = true
+                imageRef.putFile(it)
+                    .addOnSuccessListener {
+                        imageRef.downloadUrl.addOnSuccessListener { uri ->
+                            val url = uri.toString()
+                            downloadUrl = url
+                            val imageDocument = hashMapOf(
+                                "url" to downloadUrl
+                            )
+                            galleryImagesCollection.add(imageDocument)
+                                .addOnSuccessListener {
+                                    // Handle success
+                                }
+                                .addOnFailureListener { e ->
+                                    Log.e("failure", "$e")
+                                }
+                            isUploading = false
+                        }
+                    }
+                    .addOnFailureListener {
+                        isUploading = false
+                    }
             }
         }
     }
@@ -888,14 +1113,17 @@ fun GalleryPageView() {
 @Composable
 fun SettingsPageView(
     navHostController: NavHostController,
-    SSTudent: Boolean,
+    SSTudent: Boolean?,
     nameOfPersonUsingApp: String,
     idOfPersonUsingApp: String,
     promptManager: BiometricPromptManager,
+    context: Context,
+    savedAppTheme: String,
     updatedIsDarkTheme2: (Boolean) -> Unit,
     updatedNameOfPersonUsingApp2: (String) -> Unit
 ) {
     var currentTheme by remember {mutableStateOf("System default")}
+    currentTheme = savedAppTheme
     val db = Firebase.firestore
     val usersCollection = db.collection("users")
     var userEmail by remember { mutableStateOf<String?>(null) }
@@ -935,9 +1163,10 @@ fun SettingsPageView(
     val isSystemInDarkThemeBoolean: Boolean = isSystemInDarkTheme()
     var openAppThemeAlertDialog by remember {mutableStateOf(false)}
     var openAlertDialog1 by remember { mutableStateOf(false) }
+    var openAlertDialog2 by remember { mutableStateOf(false) }
     var appNotifications by remember { mutableStateOf(true) }
-
     var showingPassword by remember {mutableStateOf(false)}
+    val scope = rememberCoroutineScope()
 
     val biometricResult by promptManager.promptResults.collectAsState(
         initial = null
@@ -961,7 +1190,6 @@ fun SettingsPageView(
             }
         }
     }
-
     biometricResult.let { result ->
         when(result){
             is BiometricPromptManager.BiometricResult.AuthenticationError -> {
@@ -1055,7 +1283,7 @@ fun SettingsPageView(
                         headlineContent = { Text("Profile Picture") },
                         leadingContent = {
                             if (userPfpUrl?.isEmpty() == true || userPfpUrl == null){
-                                userPfpUrl = "https://firebasestorage.googleapis.com/v0/b/curated-7ac4b.appspot.com/o/profilePictures%2FDefault%20profile.png?alt=media&token=8215576d-6adf-4642-96dd-292bddc498d4"
+                                userPfpUrl = "https://firebasestorage.googleapis.com/v0/b/curated-23c42.appspot.com/o/profilePictures%2FDefault%20profile.png?alt=media&token=9d94f4d1-24eb-4d36-88c7-e463b7d1fd09"
                             }
                             Image(
                                 painter = rememberImagePainter(userPfpUrl),
@@ -1119,7 +1347,7 @@ fun SettingsPageView(
                     )
                     Divider()
                     ListItem(
-                        headlineContent = { Text(text = if (SSTudent) "Account type: SSTudent" else "Account type: SSTaff") }
+                        headlineContent = { Text(text = if (SSTudent == true) "Account type: SSTudent" else "Account type: SSTaff") }
                     )
                     Divider()
                     ListItem(
@@ -1141,7 +1369,7 @@ fun SettingsPageView(
                     Divider()
                     ListItem(
                         headlineContent = { Text(text = "Delete Account", color = MaterialTheme.colorScheme.error) },
-                        modifier = Modifier.clickable { }
+                        modifier = Modifier.clickable { openAlertDialog2 = true }
                     )
                 }
                 Spacer(Modifier.height(50.dp))
@@ -1156,9 +1384,14 @@ fun SettingsPageView(
             onConfirmation = {
                 if (passwordInput == userPassword) {
                     openAlertDialog1 = false
-                    navHostController.navigate("StartPage")
                     updatedNameOfPersonUsingApp2("")
+                    scope.launch{
+                        storeString(context, "", "email")
+                        storeString(context, "", "password")
+                        storeBoolean(context, false, "loggedIn")
+                    }
                     Firebase.auth.signOut()
+                    navHostController.navigate("StartPage")
                 } else {
                     errorMessage = "Incorrect password."
                 }
@@ -1189,7 +1422,57 @@ fun SettingsPageView(
                 }
                          },
             confirmText = "Log Out",
-            icon = Icons.Default.Info
+            icon = Icons.Default.Warning
+        )
+    } }
+    when {openAlertDialog2 -> {
+        var passwordInput by remember{mutableStateOf("")}
+        var errorMessage by remember{mutableStateOf("")}
+        AlertDialog1(
+            onDismissRequest = { openAlertDialog2 = false },
+            onConfirmation = {
+                if (passwordInput == userPassword) {
+                    openAlertDialog2 = false
+                    updatedNameOfPersonUsingApp2("")
+                    scope.launch{
+                        storeString(context, "", "email")
+                        storeString(context, "", "password")
+                        storeBoolean(context, false, "loggedIn")
+                    }
+                    Firebase.auth.currentUser!!.delete()
+                    usersCollection.document(idOfPersonUsingApp).delete()
+                    navHostController.navigate("StartPage")
+                } else {
+                    errorMessage = "Incorrect password."
+                }
+            },
+            dialogTitle = "Delete Account",
+            dialogText = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally){
+                    Text(
+                        "Are you sure you want to delete your account?",
+                        modifier = Modifier.padding(10.dp),
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        "Please enter your password to confirm that you want to delete your account.",
+                        modifier = Modifier.padding(10.dp),
+                        textAlign = TextAlign.Center
+                    )
+                    TextField(
+                        value = passwordInput,
+                        onValueChange = {passwordInput = it},
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                    )
+                    Row(modifier = Modifier.padding(10.dp)){
+                        Text(errorMessage, color = MaterialTheme.colorScheme.error)
+                        Spacer(modifier = Modifier.weight(1.0f))
+                    }
+                }
+            },
+            confirmText = "Delete Account",
+            icon = Icons.Default.Warning
         )
     } }
     var systemDefaultSelected by remember{ mutableStateOf(true) }
@@ -1272,12 +1555,21 @@ fun SettingsPageView(
                 if (systemDefaultSelected){
                     currentTheme = "System default"
                     updatedIsDarkTheme2(isSystemInDarkThemeBoolean)
+                    scope.launch{
+                        storeString(context, currentTheme, "savedAppTheme")
+                    }
                 }else{if(lightSelected){
                     currentTheme = "Light"
                     updatedIsDarkTheme2(false)
+                    scope.launch{
+                        storeString(context, currentTheme, "savedAppTheme")
+                    }
                 }else{
                     currentTheme = "Dark"
                     updatedIsDarkTheme2(true)
+                    scope.launch{
+                        storeString(context, currentTheme, "savedAppTheme")
+                    }
                 }}
             }) {
                 Text("Confirm")
@@ -1391,97 +1683,271 @@ fun GroupInsideView(navHostController: NavHostController) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CreateNewGroupPageView() {
-    Text("Create a new group")
+fun CreateNewGroupPageView(
+    navHostController: NavHostController
+) {
+    var openAlertDialog1 by remember{mutableStateOf(false)}
+    var nameTextField by remember{ mutableStateOf("")}
+    var imageUri by remember { mutableStateOf<Uri?>(null) }
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+        onResult = { uri: Uri? -> imageUri = uri }
+    )
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {Text(text = "Create new group", textAlign = TextAlign.Center)},
+                navigationIcon = {
+                    IconButton(
+                        onClick = {
+                            openAlertDialog1 = true
+                        }
+                    ){
+                        Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.0f))
+            )
+        }
+    ){ innerPadding ->
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.TopEnd
+        ){
+            Image(
+                painter = painterResource(id = R.drawable.sst_hexagon_logo),
+                contentDescription = "",
+                contentScale = ContentScale.FillBounds,
+                modifier = Modifier.offset(x = 30.dp, y = (-40).dp),
+                alpha = 0.5f
+            )
+        }
+        Column(modifier = Modifier.padding(innerPadding)){
+            Column(
+                modifier = Modifier.padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ){
+                Spacer(modifier = Modifier.height(20.dp))
+                Text("Name")
+                TextField(
+                    value = nameTextField,
+                    onValueChange = {nameTextField = it},
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = {Text("Name")}
+                )
+                Row{
+                    Text("Banner")
+                    Spacer(modifier = Modifier.weight(1.0f))
+                    Text(
+                        text = "Use Colour",
+                        modifier = Modifier.clickable{
+
+                        },
+                        color = Color(0xFF2778D7)
+                    )
+                }
+                Button(
+                    onClick = {
+                        launcher.launch("image/*")
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(72.dp)
+                    ,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Text(
+                        text = "Insert",
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                        fontSize = 30.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "",
+                        modifier = Modifier.size(30.dp),
+                        tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+                    )
+                }
+                Text("Preview")
+                Row (verticalAlignment = Alignment.CenterVertically) {
+
+                }
+            }
+        }
+    }
+    when{ openAlertDialog1 -> {
+        AlertDialog1(
+            onDismissRequest = { openAlertDialog1 = false },
+            onConfirmation = {
+                openAlertDialog1 = false
+                navHostController.popBackStack()
+                             },
+            dialogTitle = "Are you sure?",
+            dialogText = { Text("Are you sure you want to go back? Your work will be deleted if you press Yes.") },
+            confirmText = "Yes",
+            icon = Icons.Default.Warning
+        )
+    } }
+    LaunchedEffect(imageUri) {
+        imageUri?.let {
+
+        }
+    }
 }
 
 
+@SuppressLint("CoroutineCreationDuringComposition")
 @Composable
-fun StartPageView(navHostController: NavHostController, updatedSSTudent: (Boolean) -> Unit){
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-    ){
-        Image(
-            painter = painterResource(id = R.drawable.background),
-            contentDescription = "",
-            contentScale = ContentScale.FillBounds,
-            modifier = Modifier.fillMaxSize(),
-            alpha = 0.5f
-        )
-    }
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(10.dp)
-    ) {
-        Column (
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = "Welcome to CuratED",
-                modifier = Modifier.padding(10.dp),
-                color = MaterialTheme.colorScheme.onBackground,
-                fontSize = 30.sp,
-                fontWeight = FontWeight.Bold
+fun StartPageView(
+    navHostController: NavHostController,
+    context: Context,
+    updatedSSTudent: (Boolean) -> Unit,
+    updatedNameOfPersonUsingApp: (String) -> Unit,
+    updatedIdOfPersonUsingApp: (String) -> Unit
+){
+    val snackbarHostState = remember{ SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val loggedInBooleanFlow = readBoolean(context, "loggedIn").collectAsState(initial = false)
+    val loggedIn by loggedInBooleanFlow
+    val SSTudentFlow = readBoolean(context, "loggedI").collectAsState(initial = false)
+    val SSTudent by SSTudentFlow
+    val savedEmailStringFlow = readString(context, "email").collectAsState(initial = "")
+    val savedEmail by savedEmailStringFlow
+    val savedPasswordStringFlow = readString(context, "password").collectAsState(initial = "")
+    val savedPassword by savedPasswordStringFlow
+    Scaffold (
+        snackbarHost = {
+            SnackbarHost(
+                hostState = snackbarHostState
             )
-            Row{
-                Text(
-                    text = "I am a...",
-                    color = MaterialTheme.colorScheme.onBackground,
-                    fontSize = 20.sp
-                )
-                Spacer(modifier = Modifier.weight(1.0f))
-            }
-            Button(
-                onClick = {
-                    navHostController.navigate("SignInStaffPage")
-                    updatedSSTudent(false)
-                          },
-                modifier = Modifier.padding(10.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = buttonColors(containerColor = Color(0xFFFF9900))
+        }
+    ){ innerPadding ->
+        Column(modifier = Modifier.padding(innerPadding)){}
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        ){
+            Image(
+                painter = painterResource(id = R.drawable.background),
+                contentDescription = "",
+                contentScale = ContentScale.FillBounds,
+                modifier = Modifier.fillMaxSize(),
+                alpha = 0.5f
+            )
+        }
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(10.dp)
+        ) {
+            Column (
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = "SSTaff",
-                    modifier = Modifier.padding(5.dp, 15.dp),
+                    text = "Welcome to CuratED",
+                    modifier = Modifier.padding(10.dp),
                     color = MaterialTheme.colorScheme.onBackground,
-                    fontSize = 20.sp
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.Bold
                 )
-                Spacer(modifier = Modifier.weight(1.0f))
-                Icon(
-                    painter = painterResource(id = R.drawable.chevron_right),
-                    contentDescription = "",
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.onBackground,
+                Row{
+                    Text(
+                        text = "I am a...",
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontSize = 20.sp
+                    )
+                    Spacer(modifier = Modifier.weight(1.0f))
+                }
+                Button(
+                    onClick = {
+                        navHostController.navigate("SignInStaffPage")
+                    },
+                    modifier = Modifier.padding(10.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = buttonColors(containerColor = Color(0xFFFF9900))
+                ) {
+                    Text(
+                        text = "SSTaff",
+                        modifier = Modifier.padding(5.dp, 15.dp),
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontSize = 20.sp
+                    )
+                    Spacer(modifier = Modifier.weight(1.0f))
+                    Icon(
+                        painter = painterResource(id = R.drawable.chevron_right),
+                        contentDescription = "",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onBackground,
+                    )
+                }
+                Button(
+                    onClick = {
+                        navHostController.navigate("SignInStudentPage")
+                    },
+                    modifier = Modifier.padding(10.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = buttonColors(containerColor = Color(0xFFFF9900))
+                ) {
+                    Text(
+                        text = "SSTudent",
+                        modifier = Modifier.padding(5.dp, 15.dp),
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontSize = 20.sp
+                    )
+                    Spacer(modifier = Modifier.weight(1.0f))
+                    Icon(
+                        painter = painterResource(id = R.drawable.chevron_right),
+                        contentDescription = "",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onBackground,
+                    )
+                }
+            }
+        }
+    }
+    LaunchedEffect(loggedIn) {
+        if (loggedIn) {
+            Log.d("printed stuff", "logged in is true")
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    message = "Logging in..."
                 )
             }
-            Button(
-                onClick = {
-                    navHostController.navigate("SignInStudentPage")
-                    updatedSSTudent(true)
-                          },
-                modifier = Modifier.padding(10.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = buttonColors(containerColor = Color(0xFFFF9900))
-            ) {
-                Text(
-                    text = "SSTudent",
-                    modifier = Modifier.padding(5.dp, 15.dp),
-                    color = MaterialTheme.colorScheme.onBackground,
-                    fontSize = 20.sp
-                )
-                Spacer(modifier = Modifier.weight(1.0f))
-                Icon(
-                    painter = painterResource(id = R.drawable.chevron_right),
-                    contentDescription = "",
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.onBackground,
-                )
+
+            if (savedEmail.isNotEmpty() && savedPassword.isNotEmpty()) {
+                signIn(savedEmail, savedPassword) { result, name, userId, exception ->
+                    if (result != null) {
+                        updatedNameOfPersonUsingApp(name)
+                        updatedIdOfPersonUsingApp(userId)
+                        scope.launch {
+                            updatedSSTudent(SSTudent)
+                            storeBoolean(context, true, "loggedIn")
+                            snackbarHostState.currentSnackbarData?.dismiss()
+                        }
+                        navHostController.navigate("BottomNavBar")
+                    } else {
+                        scope.launch {
+                            storeBoolean(context, false, "loggedIn")
+                            snackbarHostState.showSnackbar(
+                                message = "Login failed",
+                                duration = SnackbarDuration.Short
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            scope.launch {
+                snackbarHostState.currentSnackbarData?.dismiss()
             }
         }
     }
@@ -1489,11 +1955,17 @@ fun StartPageView(navHostController: NavHostController, updatedSSTudent: (Boolea
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SignInStudentPageView(navHostController: NavHostController, updatedNameOfPersonUsingApp: (String) -> Unit, updatedIdOfPersonUsingApp: (String) -> Unit){
+fun SignInStudentPageView(
+    navHostController: NavHostController,
+    context: Context,
+    updatedNameOfPersonUsingApp: (String) -> Unit,
+    updatedIdOfPersonUsingApp: (String) -> Unit
+){
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable {mutableStateOf("") }
     var signInText by remember {mutableStateOf("")}
     var signInError by remember {mutableStateOf<String?>(null)}
+    val scope = rememberCoroutineScope()
     Scaffold(
         topBar = {
             TopAppBar(
@@ -1557,6 +2029,12 @@ fun SignInStudentPageView(navHostController: NavHostController, updatedNameOfPer
                                     signInText = "Success! Going to home page..."
                                     updatedNameOfPersonUsingApp(name)
                                     updatedIdOfPersonUsingApp(userId)
+                                    scope.launch{
+                                        storeBoolean(context, true, "loggedIn")
+                                        storeBoolean(context, true, "SSTudent")
+                                        storeString(context, email, "email")
+                                        storeString(context, password, "password")
+                                    }
                                     navHostController.navigate("BottomNavBar")
                                 } else {
                                     signInError = exception?.message
@@ -1661,7 +2139,7 @@ fun SignUpStudentPageView(navHostController: NavHostController, nameOfPersonUsin
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth()) {
                 Button(onClick = {
                     if (email != "" && password != "") {
-                        signUp(email, password, nameOfPersonUsingApp, updatedEmailVerified = {newState -> emailVerified = newState}) { result, exception ->
+                        signUp(email, password, nameOfPersonUsingApp, false, updatedEmailVerified = {newState -> emailVerified = newState}) { result, exception ->
                             if (result != null) {
                                 signUpText = "Success! Going to home page..."
                                 navHostController.navigate("BottomNavBar")
@@ -1683,11 +2161,17 @@ fun SignUpStudentPageView(navHostController: NavHostController, nameOfPersonUsin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SignInStaffPageView(navHostController: NavHostController, updatedNameOfPersonUsingApp: (String) -> Unit, updatedIdOfPersonUsingApp: (String) -> Unit){
+fun SignInStaffPageView(
+    navHostController: NavHostController,
+    context: Context,
+    updatedNameOfPersonUsingApp: (String) -> Unit,
+    updatedIdOfPersonUsingApp: (String) -> Unit
+){
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable {mutableStateOf("") }
     var signInText by remember {mutableStateOf("")}
     var signInError by remember {mutableStateOf<String?>(null)}
+    val scope = rememberCoroutineScope()
     Scaffold(
         topBar = {
             TopAppBar(
@@ -1746,12 +2230,18 @@ fun SignInStaffPageView(navHostController: NavHostController, updatedNameOfPerso
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth()) {
                     Button(onClick = {
                         if (email != "" && password != "") {
-                            if (email.contains("@sst.edu.sg")) {
+                            if (email.contains("@")) {
                                 signIn(email, password) { result, name, userId, exception ->
                                     if (result != null) {
                                         signInText = "Success! Going to home page..."
                                         updatedNameOfPersonUsingApp(name)
                                         navHostController.navigate("BottomNavBar")
+                                        scope.launch{
+                                            storeBoolean(context, true, "loggedIn")
+                                            storeBoolean(context, false, "SSTUDENT")
+                                            storeString(context, email, "email")
+                                            storeString(context, password, "password")
+                                        }
                                     } else {
                                         signInError = exception?.message
                                     }
@@ -1864,8 +2354,8 @@ fun SignUpStaffPageView(
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth()) {
                 Button(onClick = {
                     if (email != "" && password != "") {
-                        if (email.contains("@sst.edu.sg")) {
-                            signUp(email, password, nameOfPersonUsingApp, updatedEmailVerified = updatedEmailVerified) { result, exception ->
+                        if (email.contains("@")) {
+                            signUp(email, password, nameOfPersonUsingApp, true, updatedEmailVerified = updatedEmailVerified) { result, exception ->
                             if (result != null) {
                                 signUpText = ""
                                 updatedUnconfirmedEmail(email)
@@ -1883,7 +2373,7 @@ fun SignUpStaffPageView(
                     Text("Sign Up")
                 }
             }
-            Text(signUpError ?: signUpText)
+            Text(text = signUpError ?: signUpText, modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.error)
         }
     }
 }
@@ -1986,18 +2476,25 @@ fun ChangePfpPageView(
                 onClick = {
                     imageRef.putFile(imageUri)
                         .addOnSuccessListener {
-                            imageRef.downloadUrl.addOnSuccessListener { uri ->
-                                val url = uri.toString()
-                                downloadUrl = url
-                                val userDocumentRef = db.collection("users").document(idOfPersonUsingApp)
-                                userDocumentRef.update("pfpUrl", url)
-                                    .addOnSuccessListener {
-                                        navHostController.popBackStack()
-                                    }
-                                    .addOnFailureListener { e ->
-                                        e.printStackTrace()
-                                    }
-                            }
+                            imageRef.downloadUrl
+                                .addOnSuccessListener { uri ->
+                                    val url = uri.toString()
+                                    downloadUrl = url
+                                    val userDocumentRef = db.collection("users").document(idOfPersonUsingApp)
+                                    userDocumentRef.update("pfpUrl", url)
+                                        .addOnSuccessListener {
+                                            navHostController.popBackStack()
+                                        }
+                                        .addOnFailureListener { e ->
+                                            e.printStackTrace()
+                                        }
+                                }
+                                .addOnFailureListener { e ->
+                                    Log.d("bruh", "$e")
+                                }
+                        }
+                        .addOnFailureListener { e ->
+                            Log.d("bruh", "$e")
                         }
                           },
                 modifier = Modifier
