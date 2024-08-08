@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.projectservedraft2"
+    namespace = "com.example.CuratED"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.projectservedraft2"
+        applicationId = "com.example.CuratED"
         minSdk = 24
         targetSdk = 34
         versionCode = 1
@@ -85,4 +85,8 @@ dependencies {
 
     implementation("androidx.datastore:datastore-preferences:1.0.0")
     implementation("androidx.datastore:datastore-core:1.0.0")
+
+    implementation("com.github.skydoves:colorpicker-compose:1.0.0")
+
+    implementation("androidx.core:core-splashscreen:1.0.1")
 }

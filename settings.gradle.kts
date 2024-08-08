@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Project serve draft 2"
+rootProject.name = "CuratED"
 include(":app")
  

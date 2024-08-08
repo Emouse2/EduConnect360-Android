@@ -1,12 +1,14 @@
-package com.example.projectservedraft2
+package com.example.CuratED
 
 import android.annotation.SuppressLint
+import android.app.DownloadManager
 import android.content.ContentValues.TAG
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.provider.Settings
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -29,6 +31,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,9 +48,11 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -72,6 +77,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarDefaults.containerColor
 import androidx.compose.material3.NavigationBarItem
@@ -104,6 +110,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -114,6 +121,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -126,11 +134,14 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import coil.compose.rememberAsyncImagePainter
 import coil.compose.rememberImagePainter
-import com.example.projectservedraft2.ui.theme.ProjectServeDraft2Theme
+import com.example.CuratED.ui.theme.ProjectServeDraft2Theme
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import com.google.firebase.Firebase
+import com.google.firebase.Timestamp
 import com.google.firebase.auth.AuthResult
 import com.google.firebase.auth.auth
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.firestore
 import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.CoroutineScope
@@ -140,7 +151,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
 import java.time.LocalTime
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 
 class MainActivity : AppCompatActivity() {
@@ -152,6 +166,7 @@ class MainActivity : AppCompatActivity() {
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installSplashScreen()
         setContent {
             val isSystemInDarkThemeBoolean: Boolean = isSystemInDarkTheme()
             var isDarkTheme by remember { mutableStateOf(isSystemInDarkThemeBoolean) }
@@ -182,11 +197,13 @@ class MainActivity : AppCompatActivity() {
                 } else{
                     isDarkTheme = true
                 }}
-                var startDestination by remember{mutableStateOf("StartPage")}
+
+                var imageEnlargedCurrently by remember{mutableStateOf("")}
+                var groupSeeingCurrently by remember{mutableStateOf("")}
 
                 NavHost(
                     navController = navController,
-                    startDestination = startDestination,
+                    startDestination = "StartPage",
                     modifier = Modifier.fillMaxSize()
                 ) {
                     composable(
@@ -230,7 +247,9 @@ class MainActivity : AppCompatActivity() {
                         SignUpStudentPageView(
                             navController,
                             nameOfPersonUsingApp,
-                            updatedNameOfPersonUsingApp = { newState -> nameOfPersonUsingApp = newState }
+                            context,
+                            updatedNameOfPersonUsingApp = { newState -> nameOfPersonUsingApp = newState },
+                            updatedIdOfPersonUsingApp = {newState -> idOfPersonUsingApp = newState}
                         )
                     }
                     composable(
@@ -261,9 +280,11 @@ class MainActivity : AppCompatActivity() {
                         SignUpStaffPageView(
                             navController,
                             nameOfPersonUsingApp,
+                            context,
                             updatedNameOfPersonUsingApp = { newState -> nameOfPersonUsingApp = newState },
                             updatedUnconfirmedEmail = {newState -> unconfirmedEmail = newState},
-                            updatedEmailVerified = {newState -> emailVerified = newState}
+                            updatedEmailVerified = {newState -> emailVerified = newState},
+                            updatedIdOfPersonUsingApp = {newState -> idOfPersonUsingApp = newState}
                         )
                     }
                     composable(
@@ -291,7 +312,9 @@ class MainActivity : AppCompatActivity() {
                             savedAppTheme,
                             updatedIsDarkTheme = { newState -> isDarkTheme = newState },
                             updatedNameOfPersonUsingApp = { newState -> nameOfPersonUsingApp = newState },
-                            updatedSSTudent = {newState -> SSTudent = newState}
+                            updatedSSTudent = {newState -> SSTudent = newState},
+                            updatedImageEnlargedCurrently = {newState -> imageEnlargedCurrently = newState},
+                            updatedGroupSeeingCurrently = {newState -> groupSeeingCurrently = newState}
                         )
                     }
                     composable(
@@ -301,7 +324,13 @@ class MainActivity : AppCompatActivity() {
                         popEnterTransition = { fadeIn(tween(500)) },
                         popExitTransition = { slideOutHorizontally(targetOffsetX = { fullWidth -> fullWidth }, animationSpec = tween(500)) + fadeOut(animationSpec = tween(500)) }
                     ) {
-                        GroupInsideView(navController)
+                        GroupInsideView(
+                            navController,
+                            groupSeeingCurrently,
+                            updatedImageEnlargedCurrently = {newState -> imageEnlargedCurrently = newState},
+                            SSTudent,
+                            idOfPersonUsingApp
+                        )
                     }
                     composable(
                         route = "CreateNewGroupPage",
@@ -332,6 +361,17 @@ class MainActivity : AppCompatActivity() {
                         popExitTransition = { slideOutVertically(targetOffsetY = { fullHeight -> fullHeight }, animationSpec = tween(500)) + fadeOut(tween(500)) }
                     ){
                         ChangePasswordPageView(idOfPersonUsingApp, navController)
+                    }
+                    composable(
+                        route = "ImageLarge",
+                        enterTransition = { fadeIn(tween(500)) },
+                        exitTransition = { fadeOut(tween(500)) }
+                    ){
+                        ImageLargeView(
+                            imageEnlargedCurrently,
+                            navController,
+                            context
+                        )
                     }
                 }
             }
@@ -470,6 +510,7 @@ fun signUp(
     name: String,
     SSTudent: Boolean,
     updatedEmailVerified: (Boolean) -> Unit,
+    updatedIdOfPersonUsingApp: (String) -> Unit,
     onResult: (AuthResult?, Exception?) -> Unit
 ) {
     val auth = Firebase.auth
@@ -516,6 +557,7 @@ fun signUp(
                     db.collection("users").document(it.uid)
                         .set(userData)
                         .addOnCompleteListener { firestoreTask ->
+                            updatedIdOfPersonUsingApp(it.uid)
                             onResult(if (firestoreTask.isSuccessful) task.result else null, firestoreTask.exception)
                         }
                 }
@@ -546,7 +588,9 @@ fun BottomNavBar(
     savedAppTheme: String,
     updatedIsDarkTheme: (Boolean) -> Unit,
     updatedNameOfPersonUsingApp: (String) -> Unit,
-    updatedSSTudent: (Boolean) -> Unit
+    updatedSSTudent: (Boolean) -> Unit,
+    updatedImageEnlargedCurrently: (String) -> Unit,
+    updatedGroupSeeingCurrently: (String) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val db = Firebase.firestore
@@ -585,11 +629,26 @@ fun BottomNavBar(
                     containerColor = containerColor,
                     tonalElevation = 2.dp
                 ){
-                    if(navBackStackEntry?.destination?.route == "GroupPage"){
+                    if(nestedNavBackStackEntry?.destination?.route == "GroupPage"){
                         isSelected1 = true
                         isSelected2 = false
                         isSelected3 = false
                         isSelected4 = false
+                    } else if(nestedNavBackStackEntry?.destination?.route == "GalleryPage"){
+                        isSelected1 = false
+                        isSelected2 = true
+                        isSelected3 = false
+                        isSelected4 = false
+                    } else if (nestedNavBackStackEntry?.destination?.route == "SettingsPage") {
+                        isSelected1 = false
+                        isSelected2 = false
+                        isSelected3 = true
+                        isSelected4 = false
+                    } else {
+                        isSelected1 = false
+                        isSelected2 = false
+                        isSelected3 = false
+                        isSelected4 = true
                     }
                     NavigationBarItem(
                         selected = isSelected1,
@@ -714,53 +773,53 @@ fun BottomNavBar(
                             }
                         )}
                     )
-                    if (!SSTudent!!) {
-                        NavigationBarItem(
-                            selected = isSelected4,
-                            onClick = {
-                                nestedNavController.navigate("PhotobookPage")
-                                isSelected1 = false
-                                isSelected2 = false
-                                isSelected3 = false
-                                isSelected4 = true
-                            },
-                            icon = {
-                                Box(
-                                    contentAlignment = Alignment.Center
-                                ){
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.Center
-                                    ){
-                                        Icon(
-                                            painter = painterResource(id = R.drawable.photo_fill_on_rectangle_fill),
-                                            modifier = Modifier.size(20.dp),
-                                            contentDescription = ""
-                                        )
-                                    }
-                                }
-                            },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Color(0xFF2778D7),
-                                selectedTextColor = Color(0xFF2778D7),
-                                indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
-                                unselectedIconColor = MaterialTheme.colorScheme.onBackground,
-                                unselectedTextColor = MaterialTheme.colorScheme.onBackground
-                            ),
-                            label = {Text(
-                                text = "Photobook",
-                                fontWeight = if (isSelected4) {
-                                    FontWeight.Bold
-                                } else{
-                                    FontWeight.Normal
-                                }
-                            )}
-                        )
-                    }
+//                    if (!SSTudent) {
+//                        NavigationBarItem(
+//                            selected = isSelected4,
+//                            onClick = {
+//                                nestedNavController.navigate("PermissionsPage")
+//                                isSelected1 = false
+//                                isSelected2 = false
+//                                isSelected3 = false
+//                                isSelected4 = true
+//                            },
+//                            icon = {
+//                                Box(
+//                                    contentAlignment = Alignment.Center
+//                                ){
+//                                    Column(
+//                                        horizontalAlignment = Alignment.CenterHorizontally,
+//                                        verticalArrangement = Arrangement.Center
+//                                    ){
+//                                        Icon(
+//                                            painter = painterResource(id = R.drawable.person_2_badge_gearshape_fill),
+//                                            modifier = Modifier.size(30.dp),
+//                                            contentDescription = ""
+//                                        )
+//                                    }
+//                                }
+//                            },
+//                            colors = NavigationBarItemDefaults.colors(
+//                                selectedIconColor = Color(0xFF2778D7),
+//                                selectedTextColor = Color(0xFF2778D7),
+//                                indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+//                                unselectedIconColor = MaterialTheme.colorScheme.onBackground,
+//                                unselectedTextColor = MaterialTheme.colorScheme.onBackground
+//                            ),
+//                            label = {Text(
+//                                text = "Permissions",
+//                                fontWeight = if (isSelected4) {
+//                                    FontWeight.Bold
+//                                } else{
+//                                    FontWeight.Normal
+//                                }
+//                            )}
+//                        )
+//                    }
                 }
         },
         floatingActionButton = {
-            if (!SSTudent!! && nestedNavBackStackEntry?.destination?.route == "GroupPage") {
+            if (!SSTudent && nestedNavBackStackEntry?.destination?.route == "GroupPage") {
                 FloatingActionButton(
                     onClick = { navHostController.navigate("CreateNewGroupPage") }
                 ) {
@@ -795,7 +854,11 @@ fun BottomNavBar(
                 popEnterTransition = noEnterTransition,
                 popExitTransition = noExitTransition
             ) {
-                GroupPageView(navHostController, nameOfPersonUsingApp)
+                GroupPageView(
+                    navHostController,
+                    nameOfPersonUsingApp,
+                    updatedGroupSeeingCurrently = updatedGroupSeeingCurrently
+                )
             }
              composable(
                  route = "GalleryPage",
@@ -804,7 +867,12 @@ fun BottomNavBar(
                  popEnterTransition = noEnterTransition,
                  popExitTransition = noExitTransition
             ) {
-                GalleryPageView(idOfPersonUsingApp, nestedNavController)
+                GalleryPageView(
+                    idOfPersonUsingApp,
+                    nestedNavController,
+                    navHostController,
+                    updatedImageEnlargedCurrently = updatedImageEnlargedCurrently
+                )
             }
             composable(
                 route = "SettingsPage",
@@ -825,15 +893,15 @@ fun BottomNavBar(
                     updatedNameOfPersonUsingApp2 = { newState -> updatedNameOfPersonUsingApp(newState)}
                 )
             }
-            composable(
-                route = "PhotobookPage",
-                enterTransition = noEnterTransition,
-                exitTransition = noExitTransition,
-                popEnterTransition = noEnterTransition,
-                popExitTransition = noExitTransition
-            ) {
-                PhotobookPageView()
-            }
+//            composable(
+//                route = "PermissionsPage",
+//                enterTransition = noEnterTransition,
+//                exitTransition = noExitTransition,
+//                popEnterTransition = noEnterTransition,
+//                popExitTransition = noExitTransition
+//            ) {
+//                PermissionsPageView(navHostController)
+//            }
         }
     }
 }
@@ -898,15 +966,38 @@ fun getGreetingMessage(currentTime: LocalTime): String {
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
-fun GroupPageView(navHostController: NavHostController, nameOfPersonUsingApp: String) {
+fun GroupPageView(
+    navHostController: NavHostController,
+    nameOfPersonUsingApp: String,
+    updatedGroupSeeingCurrently: (String) -> Unit
+) {
     val currentTime = LocalTime.now()
     val greeting = remember { mutableStateOf(getGreetingMessage(currentTime)) }
-    var groupsList by remember{ mutableStateOf(listOf<String>()) }
+    var groupsData by remember { mutableStateOf<List<Map<String, String>>>(emptyList()) }
+
+    val db = Firebase.firestore
+    val groupsCollection = db.collection("groups")
+    LaunchedEffect(Unit) {
+        groupsCollection.orderBy("timestamp", Query.Direction.ASCENDING).get()
+            .addOnSuccessListener { querySnapshot ->
+                val dataList = querySnapshot.documents.mapNotNull { document ->
+                    val name = document.getString("name") ?: ""
+                    val colorOrImageUrl = document.getString("colour") ?: document.getString("imageUrl") ?: ""
+                    mapOf("name" to name, "colorOrImageUrl" to colorOrImageUrl)
+                }
+                groupsData = dataList
+                Log.d("success", "${groupsData.size} documents found")
+            }
+            .addOnFailureListener { error ->
+                Log.e("failure", "$error")
+            }
+    }
 
     LaunchedEffect(currentTime) {
         greeting.value = getGreetingMessage(currentTime)
     }
-    Box(modifier = Modifier.fillMaxSize()){
+
+    Box(modifier = Modifier.fillMaxSize()) {
         Image(
             painter = painterResource(id = R.drawable.sst_hexagon_logo),
             contentDescription = "",
@@ -915,10 +1006,9 @@ fun GroupPageView(navHostController: NavHostController, nameOfPersonUsingApp: St
             alpha = 0.5f
         )
     }
-    Column (
-        modifier = Modifier
-            .padding(10.dp)
-            .verticalScroll(rememberScrollState())
+
+    Column(
+        modifier = Modifier.padding(10.dp)
     ) {
         Spacer(modifier = Modifier.height(30.dp))
         Text(
@@ -941,27 +1031,79 @@ fun GroupPageView(navHostController: NavHostController, nameOfPersonUsingApp: St
             modifier = Modifier.offset(y = -10.dp),
             color = MaterialTheme.colorScheme.onBackground
         )
-
-        Button(
-            onClick = { navHostController.navigate("GroupInsidePage") },
-            shape = RoundedCornerShape(16.dp),
-            colors = buttonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+        LazyColumn(
+            modifier = Modifier.padding(bottom = 90.dp),
+            contentPadding = PaddingValues(vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                text = "S2-01",
-                modifier = Modifier.padding(20.dp),
-                color = MaterialTheme.colorScheme.onBackground,
-                fontWeight = FontWeight.Bold,
-                fontSize = 25.sp
-            )
-            Spacer(modifier = Modifier.weight(1.0f))
+            items(groupsData) { group ->
+                var colorChosen by remember { mutableStateOf(Color(0xFFFFFFFF)) }
+                var usingColor by remember { mutableStateOf(true) }
+                val colorOrImageUrl1 = group["colorOrImageUrl"] ?: ""
+                if (!group["colorOrImageUrl"].isNullOrEmpty()) {
+                    if (colorOrImageUrl1.startsWith("#")) {
+                        usingColor = true
+                        val hexCleaned = colorOrImageUrl1.trim().removePrefix("#")
+                        require(hexCleaned.length == 6 || hexCleaned.length == 8) {
+                            "Invalid hex color string"
+                        }
+                        val colorInt = hexCleaned.toLong(16)
+                        val finalColorInt = if (hexCleaned.length == 6) {
+                            0xFF000000 or colorInt
+                        } else {
+                            colorInt
+                        }
+                        colorChosen = Color(finalColorInt)
+                    } else {
+                        colorChosen = MaterialTheme.colorScheme.background
+                        usingColor = false
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(72.dp)
+                        .clickable {
+                            navHostController.navigate("GroupInsidePage")
+                            val groupName = group["name"]
+                            updatedGroupSeeingCurrently("$groupName")
+                        }
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(colorChosen.copy(alpha = 0.3f))
+                ) {
+                    if (!usingColor) {
+                        Image(
+                            painter = rememberAsyncImagePainter(colorOrImageUrl1),
+                            contentDescription = "",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                            alpha = 0.3f
+                        )
+                    }
+                    Text(
+                        text = group["name"] ?: "error!",
+                        modifier = Modifier.padding(20.dp),
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 25.sp
+                    )
+                }
+            }
         }
     }
 }
 
 
+
+
 @Composable
-fun GalleryPageView(idOfPersonUsingApp: String, nestedNavController: NavHostController) {
+fun GalleryPageView(
+    idOfPersonUsingApp: String,
+    nestedNavController: NavHostController,
+    navHostController: NavHostController,
+    updatedImageEnlargedCurrently: (String) -> Unit
+) {
     var galleryPhotosList by remember { mutableStateOf(listOf<String>()) }
     var imageUri by remember { mutableStateOf<Uri?>(null) }
     val launcher = rememberLauncherForActivityResult(
@@ -971,6 +1113,7 @@ fun GalleryPageView(idOfPersonUsingApp: String, nestedNavController: NavHostCont
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember{ SnackbarHostState() }
     var canUploadImages by remember{mutableStateOf(false)}
+    var SSTudent by remember{mutableStateOf(false)}
     val db = Firebase.firestore
     val usersCollection = db.collection("users")
     LaunchedEffect(idOfPersonUsingApp) {
@@ -978,20 +1121,28 @@ fun GalleryPageView(idOfPersonUsingApp: String, nestedNavController: NavHostCont
             usersCollection.document(idOfPersonUsingApp).get()
                 .addOnSuccessListener { document ->
                     if (document != null && document.exists()) {
-                        canUploadImages = document.getBoolean("canUploadImages") == true
+//                        canUploadImages = document.getBoolean("canUploadImages") == true
+                        canUploadImages = true
+                        SSTudent = document.getBoolean("SSTudent") == true
                     } else {
-                        canUploadImages = false
+//                        canUploadImages = false
+                        canUploadImages = true
+                        SSTudent = false
                     }
                 }
                 .addOnFailureListener { exception ->
-                    canUploadImages = false
+//                    canUploadImages = false
+                    canUploadImages = true
+                    SSTudent = false
                 }
         } else {
-            canUploadImages = false
+//            canUploadImages = false
+            canUploadImages = true
+            SSTudent = false
         }
     }
     val galleryImagesCollection = db.collection("galleryImages")
-    galleryImagesCollection.get()
+    galleryImagesCollection.orderBy("timestamp", Query.Direction.ASCENDING).get()
         .addOnSuccessListener { querySnapshot ->
             val urls = querySnapshot.documents.mapNotNull { document ->
                 document.getString("url")
@@ -1036,7 +1187,7 @@ fun GalleryPageView(idOfPersonUsingApp: String, nestedNavController: NavHostCont
                         )
                     }
                     IconButton(onClick = {
-                        if (canUploadImages){
+                        if (canUploadImages || !SSTudent){
                             launcher.launch("image/*")
                         } else {
                             scope.launch {
@@ -1070,7 +1221,12 @@ fun GalleryPageView(idOfPersonUsingApp: String, nestedNavController: NavHostCont
                             Image(
                                 painter = rememberAsyncImagePainter(galleryPhoto),
                                 contentDescription = "",
-                                modifier = Modifier.aspectRatio(1f),
+                                modifier = Modifier
+                                    .aspectRatio(1f)
+                                    .clickable {
+                                        updatedImageEnlargedCurrently(galleryPhoto)
+                                        navHostController.navigate("ImageLarge")
+                                    },
                                 contentScale = ContentScale.Crop
                             )
                         }
@@ -1089,11 +1245,11 @@ fun GalleryPageView(idOfPersonUsingApp: String, nestedNavController: NavHostCont
                             val url = uri.toString()
                             downloadUrl = url
                             val imageDocument = hashMapOf(
-                                "url" to downloadUrl
+                                "url" to downloadUrl,
+                                "timestamp" to FieldValue.serverTimestamp()
                             )
                             galleryImagesCollection.add(imageDocument)
                                 .addOnSuccessListener {
-                                    // Handle success
                                 }
                                 .addOnFailureListener { e ->
                                     Log.e("failure", "$e")
@@ -1113,7 +1269,7 @@ fun GalleryPageView(idOfPersonUsingApp: String, nestedNavController: NavHostCont
 @Composable
 fun SettingsPageView(
     navHostController: NavHostController,
-    SSTudent: Boolean?,
+    SSTudent: Boolean,
     nameOfPersonUsingApp: String,
     idOfPersonUsingApp: String,
     promptManager: BiometricPromptManager,
@@ -1129,6 +1285,7 @@ fun SettingsPageView(
     var userEmail by remember { mutableStateOf<String?>(null) }
     var userPassword by remember { mutableStateOf<String?>(null) }
     var userPfpUrl by remember{mutableStateOf<String?>("")}
+    var canUploadImages by remember{mutableStateOf<Boolean?>(false)}
 
     var imageUri by remember { mutableStateOf<Uri?>(null) }
 
@@ -1144,20 +1301,25 @@ fun SettingsPageView(
                         userEmail = document.getString("email")
                         userPassword = document.getString("password")
                         userPfpUrl = document.getString("pfpUrl")
+                        canUploadImages = document.getBoolean("canUploadImages")
                     } else {
                         userEmail = ""
                         userPassword = ""
                         userPfpUrl = ""
+                        canUploadImages = false
                     }
                 }
                 .addOnFailureListener { exception ->
                     userEmail = ""
                     userPassword = ""
                     userPfpUrl = ""
+                    canUploadImages = false
                 }
         } else {
             userEmail = ""
             userPassword = ""
+            userPfpUrl = ""
+            canUploadImages = false
         }
     }
     val isSystemInDarkThemeBoolean: Boolean = isSystemInDarkTheme()
@@ -1290,7 +1452,8 @@ fun SettingsPageView(
                                 contentDescription = "",
                                 modifier = Modifier
                                     .size(100.dp)
-                                    .clip(CircleShape)
+                                    .clip(CircleShape),
+                                contentScale = ContentScale.Crop
                             )
                         },
                         modifier = Modifier.clickable {
@@ -1347,8 +1510,14 @@ fun SettingsPageView(
                     )
                     Divider()
                     ListItem(
-                        headlineContent = { Text(text = if (SSTudent == true) "Account type: SSTudent" else "Account type: SSTaff") }
+                        headlineContent = { Text(text = "Account type") },
+                        trailingContent = { Text(text = if (SSTudent) "SSTudent" else "SSTaff") }
                     )
+//                    Divider()
+//                    ListItem(
+//                        headlineContent = { Text(text = "Can upload images") },
+//                        trailingContent = { Text(text = if (canUploadImages == true) "Yes" else "No")}
+//                    )
                     Divider()
                     ListItem(
                         headlineContent = { Text(text = "Change Password", color = MaterialTheme.colorScheme.error) },
@@ -1584,18 +1753,149 @@ fun SettingsPageView(
 }
 
 
-@Composable
-fun PhotobookPageView(){
-    Column{
-        Text("photobok")
-    }
-}
+//@SuppressLint("UnusedBoxWithConstraintsScope")
+//@Composable
+//fun PermissionsPageView(navHostController: NavHostController){
+//    Column(modifier = Modifier.padding(10.dp)){
+//        Spacer(modifier = Modifier.height(30.dp))
+//        Text(
+//            text = "Permissions",
+//            fontWeight = FontWeight.Bold,
+//            fontSize = 40.sp,
+//            modifier = Modifier.offset(y = (-10).dp),
+//            color = MaterialTheme.colorScheme.onBackground
+//        )
+//    }
+//    BoxWithConstraints(
+//        modifier = Modifier
+//            .padding(10.dp)
+//            .offset(y = 90.dp)
+//    ) {
+//        val maxHeight = 588.dp
+//        Box(
+//            modifier = Modifier
+//                .height(maxHeight)
+//                .verticalScroll(rememberScrollState())
+//        ) {
+//            ElevatedCard(elevation = CardDefaults.cardElevation(3.dp)) {
+//                ListItem(
+//                    headlineContent = { Text("Uploading Images") },
+//                    modifier = Modifier.clickable { navHostController.navigate("") },
+//                    trailingContent = { Icon(painter = painterResource(R.drawable.chevron_right), contentDescription = "") }
+//                )
+//                Divider()
+//                ListItem(
+//                    headlineContent = { Text("Deleting Account") },
+//                    modifier = Modifier.clickable { navHostController.navigate("") },
+//                    trailingContent = { Icon(painter = painterResource(R.drawable.chevron_right), contentDescription = "") }
+//                )
+//            }
+//        }
+//    }
+//}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GroupInsideView(navHostController: NavHostController) {
-    var groupName by remember{ mutableStateOf("S2-01")}
-    val imageUrlThing = "https://firebasestorage.googleapis.com/v0/b/curated-7ac4b.appspot.com/o/posts%2Fclassroom%20image.jpg?alt=media&token=ec570f86-9424-43cb-ae6d-9ee4b2ac18f3"
+fun GroupInsideView(
+    navHostController: NavHostController,
+    groupSeeingCurrently: String,
+    updatedImageEnlargedCurrently: (String) -> Unit,
+    SSTudent: Boolean,
+    idOfPersonUsingApp: String
+) {
+    val db = Firebase.firestore
+    val groupsCollection = db.collection("groups")
+    var groupBannerColor by remember{mutableStateOf(Color(0xFFFFFFFF))}
+    var groupBannerUrl by remember{ mutableStateOf("") }
+    var usingColor by remember{ mutableStateOf(true)}
+    LaunchedEffect(groupSeeingCurrently) {
+        if (!groupSeeingCurrently.isNullOrEmpty()) {
+            groupsCollection.document(groupSeeingCurrently).get()
+                .addOnSuccessListener { document ->
+                    if (document != null && document.exists()) {
+                        val colorString = document.getString("colour") ?: ""
+                        if (colorString != "") {
+                            val hexCleaned = colorString.trim().removePrefix("#")
+                            require(hexCleaned.length == 6 || hexCleaned.length == 8) {
+                                "Invalid hex color string"
+                            }
+                            val colorInt = hexCleaned.toLong(16)
+                            val finalColorInt = if (hexCleaned.length == 6) {
+                                0xFF000000 or colorInt
+                            } else {
+                                colorInt
+                            }
+                            groupBannerColor = Color(finalColorInt)
+                            usingColor = true
+                        } else {
+                            groupBannerUrl = document.getString("imageUrl") ?: ""
+                            usingColor = false
+                        }
+                    } else {
+                        groupBannerColor = Color(0xFFFFFFFF)
+                        usingColor = true
+                    }
+                }
+                .addOnFailureListener { exception ->
+                    groupBannerColor = Color(0xFFFFFFFF)
+                    usingColor = true
+                    Log.e("FirestoreError", "Failed to fetch document: $exception")
+                }
+        } else {
+            groupBannerColor = Color(0xFFFFFFFF)
+            usingColor = true
+        }
+    }
+    var imageUri by remember { mutableStateOf<Uri?>(null) }
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+        onResult = { uri: Uri? -> imageUri = uri }
+    )
+    val storageRef = FirebaseStorage.getInstance().reference
+    val imageRef = storageRef.child("posts/$groupSeeingCurrently/${UUID.randomUUID()}.jpg")
+    var downloadUrl by remember { mutableStateOf<String?>(null) }
+    var isUploading by remember { mutableStateOf(false) }
+
+    var postsData by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
+    var recompositionTrigger by remember { mutableStateOf(false) }
+    LaunchedEffect(recompositionTrigger) {
+        groupsCollection.document(groupSeeingCurrently).collection("posts").orderBy("timestamp", Query.Direction.ASCENDING).get()
+            .addOnSuccessListener { querySnapshot ->
+                val dataList = querySnapshot.documents.mapNotNull { document ->
+                    val imageUrl = document.getString("url") ?: ""
+                    val imageTimestamp = document.getTimestamp("timestamp") ?: Timestamp.now()
+                    mapOf("imageUrl" to imageUrl, "imageTimestamp" to imageTimestamp)
+                }
+                postsData = dataList
+                Log.d("success", "${postsData.size} documents found")
+            }
+            .addOnFailureListener { error ->
+                Log.e("failure", "$error")
+            }
+    }
+    val usersCollection = db.collection("users")
+    var canUploadImages by remember{mutableStateOf(false)}
+    LaunchedEffect(idOfPersonUsingApp) {
+        if (idOfPersonUsingApp.isNotEmpty()) {
+            usersCollection.document(idOfPersonUsingApp).get()
+                .addOnSuccessListener { document ->
+                    if (document != null && document.exists()) {
+//                        canUploadImages = document.getBoolean("canUploadImages") == true
+                        canUploadImages = true
+                    } else {
+//                        canUploadImages = false
+                        canUploadImages = true
+                    }
+                }
+                .addOnFailureListener { exception ->
+//                    canUploadImages = false
+                    canUploadImages = true
+                }
+        } else {
+//            canUploadImages = false
+            canUploadImages = true
+        }
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -1611,6 +1911,20 @@ fun GroupInsideView(navHostController: NavHostController) {
                             contentDescription = ""
                         )
                     }
+                },
+                actions = {
+                    IconButton(onClick = { recompositionTrigger = !recompositionTrigger }) {
+                        Icon(
+                            painter = painterResource(R.drawable.arrow_clockwise),
+                            contentDescription = "",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    if (!SSTudent || canUploadImages) {
+                        IconButton(onClick = { launcher.launch("image/*") }) {
+                            Icon(imageVector = Icons.Default.Add, contentDescription = "")
+                        }
+                    }
                 }
             )
         }
@@ -1618,66 +1932,114 @@ fun GroupInsideView(navHostController: NavHostController) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(10.dp)
         ){
             Column(
                 modifier = Modifier.padding(innerPadding),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ){
-                Column(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(80.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+                        .height(72.dp)
+                        .clip(RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center
                 ){
-                    Spacer(Modifier.weight(1.0f))
-                    Text(
-                        text = groupName,
-                        modifier = Modifier.padding(20.dp),
-                        color = MaterialTheme.colorScheme.onBackground,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(Modifier.weight(1.0f))
-                }
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())){
-                    ElevatedCard(elevation = CardDefaults.cardElevation(3.dp)) {
-                        Box(
-                            contentAlignment = Alignment.Center,
+                    if(usingColor){
+                        Box(modifier = Modifier
+                            .fillMaxSize()
+                            .background(groupBannerColor.copy(alpha = 0.3f))
+                        ){}
+                    } else {
+                        Image(
+                            painter = rememberAsyncImagePainter(groupBannerUrl),
+                            contentDescription = "",
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(1.78f)
-                        ){
-                            Image(
-                                painter = rememberAsyncImagePainter(imageUrlThing),
-                                contentDescription = "",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.matchParentSize()
-                            )
-                        }
-                        Divider()
-                        ListItem(
-                            headlineContent = { Text("Comment...") },
-                            modifier = Modifier.clickable {  },
-                            leadingContent = {
-                                Icon(
-                                    painter = painterResource(R.drawable.bubble_right),
+                                .fillMaxSize()
+                            ,
+                            contentScale = ContentScale.Crop,
+                            alpha = 0.3f
+                        )
+                    }
+                    Row{
+                        Text(
+                            text = groupSeeingCurrently,
+                            modifier = Modifier.padding(20.dp),
+                            color = MaterialTheme.colorScheme.onBackground,
+                            fontSize = 25.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.weight(1.0f))
+                    }
+                }
+                LazyColumn(
+                    modifier = Modifier.padding(bottom = 90.dp),
+                    contentPadding = PaddingValues(vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(15.dp)
+                ){
+                    items(postsData) { post ->
+                        ElevatedCard(elevation = CardDefaults.cardElevation(3.dp)) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(1.78f)
+                            ){
+                                Image(
+                                    painter = rememberAsyncImagePainter(post["imageUrl"]),
                                     contentDescription = "",
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            },
-                            trailingContent = {
-                                Icon(
-                                    imageVector = Icons.Outlined.FavoriteBorder,
-                                    contentDescription = "",
-                                    modifier = Modifier.size(20.dp)
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .clickable {
+                                            val imageUrlSending = post["imageUrl"] ?: ""
+                                            updatedImageEnlargedCurrently("$imageUrlSending")
+                                            navHostController.navigate("ImageLarge")
+                                        }
                                 )
                             }
+                        }
+                        val imageTimestamp = post["imageTimestamp"] as Timestamp
+                        val date = Date(imageTimestamp.seconds * 1000 + imageTimestamp.nanoseconds / 1000000)
+                        val formatter = SimpleDateFormat("MMMM d, yyyy 'at' h:mm:ss a 'UTC'XXX", Locale.getDefault())
+                        val formattedDate = formatter.format(date)
+                        Text(
+                            text = formattedDate,
+                            modifier = Modifier.padding(5.dp),
+                            color = Color(0xFF808080)
                         )
                     }
                 }
+            }
+        }
+    }
+    LaunchedEffect(imageUri) {
+        imageUri?.let {
+            if (!isUploading) {
+                isUploading = true
+                imageRef.putFile(it)
+                    .addOnSuccessListener {
+                        imageRef.downloadUrl.addOnSuccessListener { uri ->
+                            val url = uri.toString()
+                            downloadUrl = url
+                            val imageDocument = hashMapOf(
+                                "url" to downloadUrl,
+                                "timestamp" to FieldValue.serverTimestamp()
+                            )
+                            groupsCollection.document(groupSeeingCurrently).collection("posts").add(imageDocument)
+                                .addOnSuccessListener {
+
+                                }
+                                .addOnFailureListener { e ->
+                                    Log.e("failure", "$e")
+                                }
+                            isUploading = false
+                        }
+                    }
+                    .addOnFailureListener {
+                        isUploading = false
+                    }
             }
         }
     }
@@ -1689,12 +2051,26 @@ fun CreateNewGroupPageView(
     navHostController: NavHostController
 ) {
     var openAlertDialog1 by remember{mutableStateOf(false)}
+    var bottomSheet1Opened by remember{mutableStateOf(false)}
     var nameTextField by remember{ mutableStateOf("")}
+    val characterLimit = 12
     var imageUri by remember { mutableStateOf<Uri?>(null) }
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
         onResult = { uri: Uri? -> imageUri = uri }
     )
+    var colorChosen by remember { mutableStateOf(Color(0xFFFFFFFF)) }
+    var colorChosenHex by remember { mutableStateOf("")}
+    var usingColor by remember { mutableStateOf(false) }
+
+    val storageRef = FirebaseStorage.getInstance().reference
+    val imageRef = storageRef.child("groupBanners/${UUID.randomUUID()}.jpg")
+    var downloadUrl by remember { mutableStateOf<String?>(null) }
+    var isUploading by remember { mutableStateOf(false) }
+
+    val db = Firebase.firestore
+    val groupsCollection = db.collection("groups")
+    var errorMessage by remember {mutableStateOf ("") }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -1733,7 +2109,13 @@ fun CreateNewGroupPageView(
                 Text("Name")
                 TextField(
                     value = nameTextField,
-                    onValueChange = {nameTextField = it},
+                    onValueChange = {
+                        if (it.length <= characterLimit) {
+                            nameTextField = it
+                        } else {
+                            nameTextField = it.take(characterLimit)
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = {Text("Name")}
                 )
@@ -1743,13 +2125,18 @@ fun CreateNewGroupPageView(
                     Text(
                         text = "Use Colour",
                         modifier = Modifier.clickable{
-
+                            bottomSheet1Opened = true
                         },
                         color = Color(0xFF2778D7)
                     )
                 }
                 Button(
                     onClick = {
+                        imageRef.delete()
+                            .addOnSuccessListener {}
+                            .addOnFailureListener { e ->
+                                Log.d("uh oh", "$e")
+                            }
                         launcher.launch("image/*")
                     },
                     modifier = Modifier
@@ -1775,8 +2162,92 @@ fun CreateNewGroupPageView(
                     )
                 }
                 Text("Preview")
-                Row (verticalAlignment = Alignment.CenterVertically) {
-
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(80.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                ) {
+                    if (usingColor) {
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .background(colorChosen.copy(alpha = 0.3f))
+                        )
+                    } else {
+                        Image(
+                            painter = rememberAsyncImagePainter(downloadUrl),
+                            contentDescription = "",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.matchParentSize(),
+                            alpha = 0.3f
+                        )
+                    }
+                    Row (
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = nameTextField,
+                            modifier = Modifier
+                                .padding(horizontal = 40.dp)
+                            ,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 25.sp
+                        )
+                    }
+                }
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Button(
+                        onClick = {
+                            val newDoc: HashMap<String, Any> = hashMapOf()
+                            if (usingColor) {
+                                if (nameTextField != "" || colorChosenHex != "") {
+                                    newDoc["colour"] = colorChosenHex
+                                    newDoc["name"] = nameTextField
+                                    newDoc["timestamp"] = FieldValue.serverTimestamp()
+                                } else {
+                                    errorMessage = "No name or banner provided"
+                                }
+                            } else {
+                                if (nameTextField != "" || downloadUrl != "") {
+                                    newDoc["imageUrl"] = "$downloadUrl"
+                                    newDoc["name"] = nameTextField
+                                    newDoc["timestamp"] = FieldValue.serverTimestamp()
+                                } else {
+                                    errorMessage = "No name or banner provided"
+                                }
+                            }
+                            val documentRef = groupsCollection.document(nameTextField)
+                            documentRef.get()
+                                .addOnSuccessListener { document ->
+                                    if (document.exists()) {
+                                        errorMessage = "Name already taken"
+                                    } else {
+                                        documentRef.set(newDoc)
+                                            .addOnSuccessListener {
+                                                navHostController.navigate("BottomNavBar")
+                                                documentRef.collection("posts")
+                                                val newFolderRef = storageRef.child("posts/$nameTextField")
+                                            }
+                                            .addOnFailureListener { e ->
+                                                errorMessage = "$e"
+                                            }
+                                    }
+                                }
+                                .addOnFailureListener { e ->
+                                    errorMessage = "$e"
+                                }
+                        }
+                    ) {
+                        Text("Create")
+                    }
+                    Text(text = errorMessage, color = MaterialTheme.colorScheme.error)
                 }
             }
         }
@@ -1794,9 +2265,62 @@ fun CreateNewGroupPageView(
             icon = Icons.Default.Warning
         )
     } }
+    when { bottomSheet1Opened -> {
+        ModalBottomSheet(
+            onDismissRequest = { bottomSheet1Opened = false }
+        ) {
+            Column (
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, _ ->
+                            change.consume()
+                        }
+                    },
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(text = "Use Colour", fontSize = 20.sp)
+                ColorPicker(
+                    onConfirm = { updatedColorChosen ->
+                        colorChosenHex = updatedColorChosen
+                        colorChosenHex = colorChosenHex.trim().removePrefix("FF")
+                        colorChosenHex = "#$colorChosenHex"
+                        val hexCleaned = updatedColorChosen.trim().removePrefix("#")
+                        require(hexCleaned.length == 6 || hexCleaned.length == 8) {
+                            "Invalid hex color string"
+                        }
+
+                        val colorInt = hexCleaned.toLong(16)
+                        val finalColorInt = if (hexCleaned.length == 6) {
+                            0xFF000000 or colorInt
+                        } else {
+                            colorInt
+                        }
+                        colorChosen = Color(finalColorInt)
+                        usingColor = true
+                        bottomSheet1Opened = false
+                    }
+                )
+            }
+        }
+    } }
     LaunchedEffect(imageUri) {
         imageUri?.let {
-
+            if (!isUploading) {
+                isUploading = true
+                imageRef.putFile(it)
+                    .addOnSuccessListener {
+                        imageRef.downloadUrl.addOnSuccessListener { uri ->
+                            val url = uri.toString()
+                            downloadUrl = url
+                            isUploading = false
+                            usingColor = false
+                        }
+                    }
+                    .addOnFailureListener {
+                        isUploading = false
+                    }
+            }
         }
     }
 }
@@ -2056,7 +2580,12 @@ fun SignInStudentPageView(
                         .clickable { navHostController.navigate("SignUpStudentPage") }
                         .padding(10.dp)
                 )
-                Text(signInError ?: signInText)
+                Text(
+                    text = signInError ?: signInText,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
@@ -2064,12 +2593,19 @@ fun SignInStudentPageView(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SignUpStudentPageView(navHostController: NavHostController, nameOfPersonUsingApp: String, updatedNameOfPersonUsingApp: (String) -> Unit){
+fun SignUpStudentPageView(
+    navHostController: NavHostController,
+    nameOfPersonUsingApp: String,
+    context: Context,
+    updatedNameOfPersonUsingApp: (String) -> Unit,
+    updatedIdOfPersonUsingApp: (String) -> Unit
+){
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable {mutableStateOf("") }
     var signUpText by remember {mutableStateOf ("")}
     var signUpError by remember {mutableStateOf<String?>(null)}
     var emailVerified by remember {mutableStateOf (true)}
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -2139,9 +2675,15 @@ fun SignUpStudentPageView(navHostController: NavHostController, nameOfPersonUsin
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth()) {
                 Button(onClick = {
                     if (email != "" && password != "") {
-                        signUp(email, password, nameOfPersonUsingApp, false, updatedEmailVerified = {newState -> emailVerified = newState}) { result, exception ->
+                        signUp(email, password, nameOfPersonUsingApp, false, updatedEmailVerified = {newState -> emailVerified = newState}, updatedIdOfPersonUsingApp = updatedIdOfPersonUsingApp) { result, exception ->
                             if (result != null) {
                                 signUpText = "Success! Going to home page..."
+                                scope.launch{
+                                    storeBoolean(context, true, "loggedIn")
+                                    storeBoolean(context, true, "SSTudent")
+                                    storeString(context, email, "email")
+                                    storeString(context, password, "password")
+                                }
                                 navHostController.navigate("BottomNavBar")
                             } else {
                                 signUpError = exception?.message
@@ -2154,7 +2696,12 @@ fun SignUpStudentPageView(navHostController: NavHostController, nameOfPersonUsin
                     Text("Sign Up")
                 }
             }
-            Text(signUpError ?: signUpText)
+            Text(
+                text = signUpError ?: signUpText,
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
@@ -2238,7 +2785,7 @@ fun SignInStaffPageView(
                                         navHostController.navigate("BottomNavBar")
                                         scope.launch{
                                             storeBoolean(context, true, "loggedIn")
-                                            storeBoolean(context, false, "SSTUDENT")
+                                            storeBoolean(context, false, "SSTudent")
                                             storeString(context, email, "email")
                                             storeString(context, password, "password")
                                         }
@@ -2265,7 +2812,12 @@ fun SignInStaffPageView(
                         .clickable { navHostController.navigate("SignUpStaffPage") }
                         .padding(10.dp)
                 )
-                Text(signInError ?: signInText)
+                Text(
+                    text = signInError ?: signInText,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
@@ -2276,15 +2828,18 @@ fun SignInStaffPageView(
 fun SignUpStaffPageView(
     navHostController: NavHostController,
     nameOfPersonUsingApp: String,
+    context: Context,
     updatedNameOfPersonUsingApp: (String) -> Unit,
     updatedUnconfirmedEmail: (String) -> Unit,
-    updatedEmailVerified: (Boolean) -> Unit
+    updatedEmailVerified: (Boolean) -> Unit,
+    updatedIdOfPersonUsingApp: (String) -> Unit
 ){
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable {mutableStateOf("") }
     var signUpText by remember {mutableStateOf ("")}
     var signUpError by remember {mutableStateOf<String?>(null)}
     updatedEmailVerified(false)
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -2355,10 +2910,16 @@ fun SignUpStaffPageView(
                 Button(onClick = {
                     if (email != "" && password != "") {
                         if (email.contains("@")) {
-                            signUp(email, password, nameOfPersonUsingApp, true, updatedEmailVerified = updatedEmailVerified) { result, exception ->
+                            signUp(email, password, nameOfPersonUsingApp, true, updatedEmailVerified = updatedEmailVerified, updatedIdOfPersonUsingApp) { result, exception ->
                             if (result != null) {
                                 signUpText = ""
                                 updatedUnconfirmedEmail(email)
+                                scope.launch{
+                                    storeBoolean(context, true, "loggedIn")
+                                    storeBoolean(context, false, "SSTudent")
+                                    storeString(context, email, "email")
+                                    storeString(context, password, "password")
+                                }
                                 navHostController.navigate("VerifyEmailPage")
                             } else {
                                 signUpError = exception?.message
@@ -2373,7 +2934,12 @@ fun SignUpStaffPageView(
                     Text("Sign Up")
                 }
             }
-            Text(text = signUpError ?: signUpText, modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.error)
+            Text(
+                text = signUpError ?: signUpText,
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
@@ -2465,11 +3031,12 @@ fun ChangePfpPageView(
             horizontalAlignment = Alignment.CenterHorizontally
         ){
             Image(
-                painter = rememberImagePainter(imageUri),
+                painter = rememberAsyncImagePainter(imageUri),
                 contentDescription = "",
                 modifier = Modifier
                     .size(200.dp, 200.dp)
-                    .clip(CircleShape)
+                    .clip(CircleShape),
+                contentScale = ContentScale.Crop
             )
             Spacer(modifier = Modifier.weight(1.0f))
             Button(
@@ -2648,6 +3215,55 @@ fun ChangePasswordPageView(
                     )
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ImageLargeView(imageUrl: String, navHostController: NavHostController, context: Context){
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Image preview") },
+                navigationIcon = {
+                    IconButton(
+                        onClick = { navHostController.popBackStack() }
+                    ) {
+                        Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = {
+                        val uri = Uri.parse(imageUrl)
+                        val request = DownloadManager.Request(uri)
+                        request.setAllowedNetworkTypes(DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE)
+                        request.setTitle("Downloading Image")
+                        request.setDescription("Downloading image from $imageUrl")
+                        request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                        request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, uri.lastPathSegment)
+
+                        val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                        downloadManager.enqueue(request)
+                    }) {
+                        Icon(painter = painterResource(R.drawable.arrow_down_to_line), contentDescription = "", modifier = Modifier.padding(10.dp))
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.3f))
+            )
+        }
+    ) { innerPadding ->
+        Column(modifier = Modifier.padding(innerPadding)){}
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painter = rememberAsyncImagePainter(imageUrl),
+                contentDescription = "",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.FillWidth
+            )
         }
     }
 }

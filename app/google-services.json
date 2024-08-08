@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:634061266427:android:da3f84aa0c4afd85ce3f5e",
+        "mobilesdk_app_id": "1:634061266427:android:45fad3b44a884056ce3f5e",
         "android_client_info": {
-          "package_name": "com.example.projectservedraft2"
+          "package_name": "com.example.CuratED"
         }
       },
       "oauth_client": [],

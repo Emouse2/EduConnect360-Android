@@ -1,4 +1,4 @@
-package com.example.projectservedraft2.ui.theme
+package com.example.CuratED.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle

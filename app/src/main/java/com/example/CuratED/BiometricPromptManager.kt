@@ -1,4 +1,4 @@
-package com.example.projectservedraft2
+package com.example.CuratED
 
 import android.os.Build
 import androidx.biometric.BiometricManager
