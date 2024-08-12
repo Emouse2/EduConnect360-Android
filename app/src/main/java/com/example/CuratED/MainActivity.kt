@@ -2675,7 +2675,7 @@ fun SignUpStudentPageView(
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth()) {
                 Button(onClick = {
                     if (email != "" && password != "") {
-                        signUp(email, password, nameOfPersonUsingApp, false, updatedEmailVerified = {newState -> emailVerified = newState}, updatedIdOfPersonUsingApp = updatedIdOfPersonUsingApp) { result, exception ->
+                        signUp(email, password, nameOfPersonUsingApp, true, updatedEmailVerified = {newState -> emailVerified = newState}, updatedIdOfPersonUsingApp = updatedIdOfPersonUsingApp) { result, exception ->
                             if (result != null) {
                                 signUpText = "Success! Going to home page..."
                                 scope.launch{
@@ -2910,7 +2910,7 @@ fun SignUpStaffPageView(
                 Button(onClick = {
                     if (email != "" && password != "") {
                         if (email.contains("@")) {
-                            signUp(email, password, nameOfPersonUsingApp, true, updatedEmailVerified = updatedEmailVerified, updatedIdOfPersonUsingApp) { result, exception ->
+                            signUp(email, password, nameOfPersonUsingApp, false, updatedEmailVerified = updatedEmailVerified, updatedIdOfPersonUsingApp) { result, exception ->
                             if (result != null) {
                                 signUpText = ""
                                 updatedUnconfirmedEmail(email)
