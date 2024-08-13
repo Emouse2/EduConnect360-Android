@@ -2550,7 +2550,7 @@ fun SignInStudentPageView(
                         if (email != "" && password != "") {
                             signIn(email, password) { result, name, userId, exception ->
                                 if (result != null) {
-                                    signInText = "Success! Going to home page..."
+                                    signInText = ""
                                     updatedNameOfPersonUsingApp(name)
                                     updatedIdOfPersonUsingApp(userId)
                                     scope.launch{
@@ -2677,7 +2677,7 @@ fun SignUpStudentPageView(
                     if (email != "" && password != "") {
                         signUp(email, password, nameOfPersonUsingApp, true, updatedEmailVerified = {newState -> emailVerified = newState}, updatedIdOfPersonUsingApp = updatedIdOfPersonUsingApp) { result, exception ->
                             if (result != null) {
-                                signUpText = "Success! Going to home page..."
+                                signUpText = ""
                                 scope.launch{
                                     storeBoolean(context, true, "loggedIn")
                                     storeBoolean(context, true, "SSTudent")
@@ -2780,7 +2780,7 @@ fun SignInStaffPageView(
                             if (email.contains("@")) {
                                 signIn(email, password) { result, name, userId, exception ->
                                     if (result != null) {
-                                        signInText = "Success! Going to home page..."
+                                        signInText = ""
                                         updatedNameOfPersonUsingApp(name)
                                         navHostController.navigate("BottomNavBar")
                                         scope.launch{
@@ -3050,7 +3050,7 @@ fun ChangePfpPageView(
                                     val userDocumentRef = db.collection("users").document(idOfPersonUsingApp)
                                     userDocumentRef.update("pfpUrl", url)
                                         .addOnSuccessListener {
-                                            navHostController.popBackStack()
+                                            navHostController.navigate("BottomNavBar")
                                         }
                                         .addOnFailureListener { e ->
                                             e.printStackTrace()
@@ -3189,10 +3189,10 @@ fun ChangePasswordPageView(
                                     user!!.updatePassword(newPasswordTextField)
                                         .addOnCompleteListener { task ->
                                             if (task.isSuccessful) {
-                                                Log.d(TAG, "User password updated.")
+                                                Log.d("uh oh", "User password updated.")
                                                 usersCollection.document(idOfPersonUsingApp).update("password", newPasswordTextField)
                                                     .addOnSuccessListener {
-                                                        navHostController.popBackStack()
+                                                        navHostController.navigate("BottomNavBar")
                                                     }
                                                     .addOnFailureListener { e ->
                                                         e.printStackTrace()
