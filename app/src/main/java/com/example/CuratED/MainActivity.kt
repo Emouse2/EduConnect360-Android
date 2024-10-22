@@ -190,7 +190,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 val context = LocalContext.current
-                val savedAppThemeStringFlow = AppDataClass.readString(context, "savedAppTheme").collectAsState(initial = "")
+                val savedAppThemeStringFlow = AppDataClass().readString(context, "savedAppTheme").collectAsState(initial = "")
                 val savedAppTheme by savedAppThemeStringFlow
                 if (savedAppTheme == "" || savedAppTheme == "System default") {
                     isDarkTheme = isSystemInDarkThemeBoolean
@@ -393,13 +393,13 @@ fun StartPageView(
 ){
     val snackbarHostState = remember{ SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val loggedInBooleanFlow = AppDataClass.readBoolean(context, "loggedIn").collectAsState(initial = false)
+    val loggedInBooleanFlow = AppDataClass().readBoolean(context, "loggedIn").collectAsState(initial = false)
     val loggedIn by loggedInBooleanFlow
-    val SSTudentFlow = AppDataClass.readBoolean(context, "loggedI").collectAsState(initial = false)
+    val SSTudentFlow = AppDataClass().readBoolean(context, "loggedI").collectAsState(initial = false)
     val SSTudent by SSTudentFlow
-    val savedEmailStringFlow = AppDataClass.readString(context, "email").collectAsState(initial = "")
+    val savedEmailStringFlow = AppDataClass().readString(context, "email").collectAsState(initial = "")
     val savedEmail by savedEmailStringFlow
-    val savedPasswordStringFlow = AppDataClass.readString(context, "password").collectAsState(initial = "")
+    val savedPasswordStringFlow = AppDataClass().readString(context, "password").collectAsState(initial = "")
     val savedPassword by savedPasswordStringFlow
     Scaffold (
         snackbarHost = {
@@ -504,19 +504,19 @@ fun StartPageView(
             }
 
             if (savedEmail.isNotEmpty() && savedPassword.isNotEmpty()) {
-                AuthViewModel.signIn(savedEmail, savedPassword) { result, name, userId, exception ->
+                AuthViewModel().signIn(savedEmail, savedPassword) { result, name, userId, exception ->
                     if (result != null) {
                         updatedNameOfPersonUsingApp(name)
                         updatedIdOfPersonUsingApp(userId)
                         scope.launch {
                             updatedSSTudent(SSTudent)
-                            AppDataClass.storeBoolean(context, true, "loggedIn")
+                            AppDataClass().storeBoolean(context, true, "loggedIn")
                             snackbarHostState.currentSnackbarData?.dismiss()
                         }
                         navHostController.navigate("BottomNavBar")
                     } else {
                         scope.launch {
-                            AppDataClass.storeBoolean(context, false, "loggedIn")
+                            AppDataClass().storeBoolean(context, false, "loggedIn")
                             snackbarHostState.showSnackbar(
                                 message = "Login failed",
                                 duration = SnackbarDuration.Short
